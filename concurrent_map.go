@@ -7,17 +7,17 @@ import (
 
 var SHARD_COUNT = 32
 
-// A "thread" safe map of type string:Anything.
+// ConcurrentMap is a "thread" safe map of type string:Anything.
 // To avoid lock bottlenecks this map is dived to several (SHARD_COUNT) map shards.
 type ConcurrentMap []*ConcurrentMapShared
 
-// A "thread" safe string to anything map.
+// ConcurrentMapShared is a "thread" safe string to anything map.
 type ConcurrentMapShared struct {
 	items        map[string]interface{}
 	sync.RWMutex // Read Write mutex, guards access to internal map.
 }
 
-// Creates a new concurrent map.
+// New creates a new concurrent map.
 func New() ConcurrentMap {
 	m := make(ConcurrentMap, SHARD_COUNT)
 	for i := 0; i < SHARD_COUNT; i++ {
@@ -31,6 +31,7 @@ func (m ConcurrentMap) GetShard(key string) *ConcurrentMapShared {
 	return m[uint(fnv32(key))%uint(SHARD_COUNT)]
 }
 
+// MSet sets the given map to current maps.
 func (m ConcurrentMap) MSet(data map[string]interface{}) {
 	for key, value := range data {
 		shard := m.GetShard(key)
@@ -40,7 +41,7 @@ func (m ConcurrentMap) MSet(data map[string]interface{}) {
 	}
 }
 
-// Sets the given value under the specified key.
+// Set sets the given value under the specified key.
 func (m ConcurrentMap) Set(key string, value interface{}) {
 	// Get map shard.
 	shard := m.GetShard(key)
@@ -49,13 +50,13 @@ func (m ConcurrentMap) Set(key string, value interface{}) {
 	shard.Unlock()
 }
 
-// Callback to return new element to be inserted into the map
+// UpsertCb Callback to return new element to be inserted into the map
 // It is called while lock is held, therefore it MUST NOT
 // try to access other keys in same map, as it can lead to deadlock since
 // Go sync.RWLock is not reentrant
 type UpsertCb func(exist bool, valueInMap interface{}, newValue interface{}) interface{}
 
-// Insert or Update - updates existing element or inserts a new one using UpsertCb
+// Upsert is Insert or Update - updates existing element or inserts a new one using UpsertCb
 func (m ConcurrentMap) Upsert(key string, value interface{}, cb UpsertCb) (res interface{}) {
 	shard := m.GetShard(key)
 	shard.Lock()
@@ -66,7 +67,7 @@ func (m ConcurrentMap) Upsert(key string, value interface{}, cb UpsertCb) (res i
 	return res
 }
 
-// Sets the given value under the specified key if no value was associated with it.
+// SetIfAbsent Sets the given value under the specified key if no value was associated with it.
 func (m ConcurrentMap) SetIfAbsent(key string, value interface{}) bool {
 	// Get map shard.
 	shard := m.GetShard(key)
@@ -102,7 +103,7 @@ func (m ConcurrentMap) Count() int {
 	return count
 }
 
-// Looks up an item under specified key
+// Has Looks up an item under specified key
 func (m ConcurrentMap) Has(key string) bool {
 	// Get shard
 	shard := m.GetShard(key)
@@ -158,7 +159,7 @@ func (m ConcurrentMap) IsEmpty() bool {
 	return m.Count() == 0
 }
 
-// Used by the Iter & IterBuffered functions to wrap two variables together over a channel,
+// Tuple is used by the Iter & IterBuffered functions to wrap two variables together over a channel,
 type Tuple struct {
 	Key string
 	Val interface{}
@@ -240,13 +241,13 @@ func (m ConcurrentMap) Items() map[string]interface{} {
 	return tmp
 }
 
-// Iterator callback,called for every key,value found in
+// IterCb Iterator callback,called for every key,value found in
 // maps. RLock is held for all calls for a given shard
 // therefore callback sess consistent view of a shard,
 // but not across the shards
 type IterCb func(key string, v interface{})
 
-// Callback based iterator, cheapest way to read
+// IterCb Callback based iterator, cheapest way to read
 // all elements in a map.
 func (m ConcurrentMap) IterCb(fn IterCb) {
 	for idx := range m {
@@ -290,7 +291,7 @@ func (m ConcurrentMap) Keys() []string {
 	return keys
 }
 
-//Reviles ConcurrentMap "private" variables to json marshal.
+// MarshalJSON Reviles ConcurrentMap "private" variables to json marshal.
 func (m ConcurrentMap) MarshalJSON() ([]byte, error) {
 	// Create a temporary map, which will hold all item spread across shards.
 	tmp := make(map[string]interface{})
@@ -339,38 +340,99 @@ func fnv32(key string) uint32 {
 // InsertOrIncrementKey set list inner key into CMap
 // or increment value of innerkey if it exists
 // lock shard for outer key
-func (m ConcurrentMap) InsertOrIncrementKey(key string) {
+func (m ConcurrentMap) InsertOrIncrementKey(key string) int {
 	shard := m.GetShard(key)
 	shard.Lock()
 	defer shard.Unlock()
+	var result = 0
 	if val, exist := shard.items[key]; exist {
-		if iCount, okCnv := val.(int); okCnv {
-			iCount = iCount + 1       // increment
+		if iCount, okInt := val.(int); okInt {
+			iCount = iCount + 1 // increment
+			result = iCount
 			shard.items[key] = iCount // update val
 		}
-	} else {
-		shard.items[key] = 1
+	} else { // new entry
+		result = 1
+		shard.items[key] = result
 	}
+	return result
+}
+
+// InsertOrIncrementKeyNoLock set list inner key into CMap
+// or increment value of innerkey if it exists
+// lock shard for outer key
+func (m ConcurrentMap) InsertOrIncrementKeyNoLock(key string) int {
+	shard := m.GetShard(key)
+	var result = 0
+	if val, exist := shard.items[key]; exist {
+		if iCount, okInt := val.(int); okInt {
+			iCount = iCount + 1 // increment
+			result = iCount
+			shard.items[key] = iCount // update val
+		}
+	} else { // new entry
+		result = 1
+		shard.items[key] = result
+	}
+	return result
 }
 
 // InsertOrIncrementMultiKeys set list of inner keys into inner CMap <key, ListofKeys>
 // or increment value of innerkey if it exists
 // lock shard for outer key
-func (m ConcurrentMap) InsertOrIncrementMultiKeys(keys []string) {
+func (m ConcurrentMap) InsertOrIncrementMultiKeys(keys []string) []int {
+	var results []int
 	for _, key := range keys {
-		m.InsertOrIncrementKey(key)
+		result := m.InsertOrIncrementKey(key) // lock each key
+		results = append(results, result)
 	}
+	return results
+}
+
+// InsertOrIncrementMultiKeysNoLock set list of inner keys into inner CMap <key, ListofKeys>
+// or increment value of innerkey if it exists
+// lock shard for outer key
+func (m ConcurrentMap) InsertOrIncrementMultiKeysNoLock(keys []string) []int {
+	var results []int
+	for _, key := range keys {
+		result := m.InsertOrIncrementKeyNoLock(key) // lock each key
+		results = append(results, result)
+	}
+	return results
 }
 
 // DecrementOrDeleteKey decrement value of key by one
 // or delete one key in CMap if key count is zero
 func (m ConcurrentMap) DecrementOrDeleteKey(key string) bool {
 	var deleted = false
+
 	shard := m.GetShard(key)
 	shard.Lock()
 	defer shard.Unlock()
+
 	if val, exist := shard.items[key]; exist {
-		if iCount, okCnv := val.(int); okCnv {
+		if iCount, okInt := val.(int); okInt {
+			iCount = iCount - 1 // decrement val
+			if iCount == 0 {
+				// delete key entry from map
+				delete(shard.items, key)
+				deleted = true
+			} else { // still have count
+				// update decremented key
+				shard.items[key] = iCount
+			}
+		}
+	}
+	return deleted
+}
+
+// DecrementOrDeleteKeyNoLock decrement value of key by one
+// or delete one key in CMap if key count is zero
+func (m ConcurrentMap) DecrementOrDeleteKeyNoLock(key string) bool {
+	var deleted = false
+	shard := m.GetShard(key)
+	if val, exist := shard.items[key]; exist {
+		if iCount, okInt := val.(int); okInt {
 			iCount = iCount - 1 // decrement val
 			if iCount == 0 {
 				// delete  key
@@ -388,8 +450,9 @@ func (m ConcurrentMap) DecrementOrDeleteKey(key string) bool {
 // DecrementOrDeleteMultiKeys decrement value of keys by one
 // or delete one key in CMap if key count is zero
 func (m ConcurrentMap) DecrementOrDeleteMultiKeys(keys []string) []string {
+
 	var deletedKeys = []string{}
-	for _, key := range keys {
+	for _, key := range keys { // lock each key
 		if deleted := m.DecrementOrDeleteKey(key); deleted {
 			deletedKeys = append(deletedKeys, key)
 		}
@@ -404,16 +467,17 @@ func (m ConcurrentMap) SetCMapKey(key, innerKey string) {
 	outerShard := m.GetShard(key)
 	outerShard.Lock()
 	defer outerShard.Unlock()
+
 	// get innerCmap
-	innerVal, ok := outerShard.items[key]
-	if ok {
-		// already exist <key, innerKey>
-		innerCmap := innerVal.(ConcurrentMap)
-		innerCmap.Set(innerKey, struct{}{})
+	if innerVal, ok := outerShard.items[key]; ok {
+		// cmap already exist for <key, innerKey>
+		if innerCmap, okCMap := innerVal.(ConcurrentMap); okCMap {
+			innerCmap.SetNoLock(innerKey, struct{}{})
+		}
 	} else {
 		// key or innerkey not exist
-		var innerCmap = New() // create new ConcurrentMap
-		innerCmap.Set(innerKey, struct{}{})
+		var innerCmap = New()                     // create new ConcurrentMap
+		innerCmap.SetNoLock(innerKey, struct{}{}) // set inner key with struct
 		// set new cmap
 		outerShard.items[key] = innerCmap
 	}
@@ -428,20 +492,23 @@ func (m ConcurrentMap) SetCMapMultiKeys(key string, innerKeys []string) {
 	defer outerShard.Unlock()
 	// get innerCmap
 	if innerVal, ok := outerShard.items[key]; ok {
-		// already exist <key, innerKey>
+		// cmap already exist <key, innerKey>
 		// get existing inner cmap
-		innerCmap := innerVal.(ConcurrentMap)
-		// set keys into cmap
-		for _, innerKey := range innerKeys {
-			innerCmap.Set(innerKey, struct{}{})
+		if innerCmap, okConv := innerVal.(ConcurrentMap); okConv {
+			// set inner keys into cmap
+			for _, innerKey := range innerKeys {
+				innerCmap.SetNoLock(innerKey, struct{}{})
+			}
 		}
+
 	} else {
 		// key or innerkey not exist
 		var innerCmap = New() // create new ConcurrentMap
-		// set keys into new cmap
+		// set keys into new ConcurrentMap
 		for _, innerKey := range innerKeys {
-			innerCmap.Set(innerKey, struct{}{})
+			innerCmap.SetNoLock(innerKey, struct{}{})
 		}
+		// set new inner cmap for key
 		outerShard.items[key] = innerCmap
 	}
 }
@@ -453,19 +520,19 @@ func (m ConcurrentMap) InsertOrIncrementCMapKey(key, innerKey string) {
 	outerShard := m.GetShard(key)
 	outerShard.Lock()
 	defer outerShard.Unlock()
-	// get innerCmap
+
+	// get innerCMap
 	innerVal, exist := outerShard.items[key]
 	if exist { // already exist <key, innerKey>
 		innerCmap := innerVal.(ConcurrentMap)
-		innerCmap.InsertOrIncrementKey(innerKey)
-		// innerCmap.Set(innerKey, struct{}{})
+		innerCmap.InsertOrIncrementKeyNoLock(innerKey)
+
 	} else { // key or innercmap not exist
 		var innerCmap = New() // create new ConcurrentMap
-		innerCmap.Set(innerKey, 1)
-		// set new cmap
+		innerCmap.SetNoLock(innerKey, 1)
+		// set new cmap for key
 		outerShard.items[key] = innerCmap
 	}
-
 }
 
 // InsertOrIncrementCMapMultiKeys set list of inner keys into inner CMap <key, ListofKeys>
@@ -478,16 +545,16 @@ func (m ConcurrentMap) InsertOrIncrementCMapMultiKeys(key string, innerKeys []st
 	// get innerCmap
 	innerVal, exist := outerShard.items[key]
 	if exist { // already exist <key, innerKey>
-		if innerCmap, okConv := innerVal.(ConcurrentMap); okConv {
-			innerCmap.InsertOrIncrementMultiKeys(innerKeys)
+		if innerCmap, okCMap := innerVal.(ConcurrentMap); okCMap {
+			innerCmap.InsertOrIncrementMultiKeysNoLock(innerKeys) // this is lock
 		}
 		// innerCmap.Set(innerKey, struct{}{})
 	} else { // key or innercmap not exist
 		var innerCmap = New() // create new ConcurrentMap
 		for _, innerKey := range innerKeys {
-			innerCmap.Set(innerKey, 1)
+			innerCmap.SetNoLock(innerKey, 1)
 		}
-		// set new cmap
+		// set new cmap for key
 		outerShard.items[key] = innerCmap
 	}
 
@@ -496,14 +563,15 @@ func (m ConcurrentMap) InsertOrIncrementCMapMultiKeys(key string, innerKeys []st
 // DeleteCMapKey delete one innerkey in inner CMap of outer key
 // lock shard for outer key
 func (m ConcurrentMap) DeleteCMapKey(key, innerKey string) {
+
 	val, ok := m.Get(key)
 	shard := m.GetShard(key)
 	shard.Lock()
 	defer shard.Unlock()
 	if ok {
-		innerCmap, okCnv := val.(ConcurrentMap)
-		if okCnv {
-			innerCmap.Remove(innerKey)
+		innerCmap, okCMap := val.(ConcurrentMap)
+		if okCMap {
+			innerCmap.RemoveNoLock(innerKey)
 		}
 	}
 }
@@ -517,9 +585,9 @@ func (m ConcurrentMap) DecrementOrDeleteCMapKey(key, innerKey string) bool {
 	shard.Lock()
 	defer shard.Unlock()
 	if ok { // inner value exists for <key>
-		if innerCmap, okCnv := val.(ConcurrentMap); okCnv { // inside inner cmap
+		if innerCmap, okCMap := val.(ConcurrentMap); okCMap { // inside inner cmap
 			// innerCmap.Remove(innerKey)
-			deleted = innerCmap.DecrementOrDeleteKey(innerKey)
+			deleted = innerCmap.DecrementOrDeleteKeyNoLock(innerKey) // this is lock
 		}
 	}
 	return deleted
@@ -534,15 +602,15 @@ func (m ConcurrentMap) DecrementOrDeleteMultiCMapKeys(key string, innerKeys []st
 	shard.Lock()
 	defer shard.Unlock()
 	if ok { // inner value exists for <key>
-		innerCmap, okCnv := val.(ConcurrentMap)
-		if okCnv { // inside inner cmap
+		innerCmap, okCMap := val.(ConcurrentMap)
+		if okCMap { // inside inner cmap
 			deletedInnerKeys = innerCmap.DecrementOrDeleteMultiKeys(innerKeys)
 		}
 	}
 	return deletedInnerKeys
 }
 
-// DeleteCMapMultiKeys delete list of innerkeys in inner CMap of outer key
+// DeleteCMapMultiKeys delete list of innerkeys in inner CMap of given outer key
 // lock shard for outer key
 func (m ConcurrentMap) DeleteCMapMultiKeys(key string, innerKeys []string) {
 
@@ -550,11 +618,12 @@ func (m ConcurrentMap) DeleteCMapMultiKeys(key string, innerKeys []string) {
 	shard := m.GetShard(key)
 	shard.Lock()
 	defer shard.Unlock()
-	if ok {
+
+	if ok { // cmap exist for key
 		innerCmap, okCnv := val.(ConcurrentMap)
 		if okCnv {
 			for _, innerKey := range innerKeys {
-				innerCmap.Remove(innerKey)
+				innerCmap.RemoveNoLock(innerKey) // remove inner key entry
 			}
 		}
 	}
@@ -562,16 +631,23 @@ func (m ConcurrentMap) DeleteCMapMultiKeys(key string, innerKeys []string) {
 
 // getCMap returns inner ConcurrentMap for key
 func (m ConcurrentMap) getCMap(key string) (ConcurrentMap, bool) {
-	val, exist := m.Get(key)
-	innerCmap, ok := val.(ConcurrentMap)
-	if !ok {
-		innerCmap = nil
-		exist = false
+	// read lock
+	// Get shard
+	shard := m.GetShard(key)
+	shard.RLock()
+	defer shard.RUnlock()
+	// Get item from shard for given key.
+	val, exist := shard.items[key]
+	if !exist { // outer key does not exists
+		return nil, false
 	}
-	return innerCmap, exist
+	innerCMap, okConv := val.(ConcurrentMap)
+
+	return innerCMap, okConv
 }
 
 // GetInnerCMapKeys Get list of inner keys in inner ConcurrentMap
+// <Keys, <[k1]val1, [k2]val2>> get k1,k2, ...
 func (m ConcurrentMap) GetInnerCMapKeys(key string) ([]string, bool) {
 	innerCmap, exist := m.getCMap(key)
 	var results []string
@@ -581,4 +657,24 @@ func (m ConcurrentMap) GetInnerCMapKeys(key string) ([]string, bool) {
 		results = innerCmap.Keys()
 	}
 	return results, exist
+}
+
+// SetNoLock sets the given value under the specified key without locking shard.
+// If already lock for outer shard, locking inside will waste kernel resource
+func (m ConcurrentMap) SetNoLock(key string, value interface{}) {
+	// Get map shard.
+	shard := m.GetShard(key)
+	// shard.Lock()
+	shard.items[key] = value
+	// shard.Unlock()
+}
+
+// RemoveNoLock removes an element from the map without locking shard.
+// If already lock for outer shard, locking inside will waste kernel resource
+func (m ConcurrentMap) RemoveNoLock(key string) {
+	// Try to get shard.
+	shard := m.GetShard(key)
+	// shard.Lock()
+	delete(shard.items, key)
+	// shard.Unlock()
 }
