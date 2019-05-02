@@ -561,7 +561,8 @@ func (m ConcurrentMap) InsertOrIncrementCMapMultiKeys(key string, innerKeys []st
 }
 
 // DeleteCMapKey delete one innerkey in inner CMap of outer key
-// lock shard for outer key
+// lock shard for outer key.
+//  Clear empty cmap
 func (m ConcurrentMap) DeleteCMapKey(key, innerKey string) {
 
 	val, ok := m.Get(key)
@@ -572,6 +573,9 @@ func (m ConcurrentMap) DeleteCMapKey(key, innerKey string) {
 		innerCmap, okCMap := val.(ConcurrentMap)
 		if okCMap {
 			innerCmap.RemoveNoLock(innerKey)
+		}
+		if innerCmap.IsEmpty() {
+			delete(shard.items, key)
 		}
 	}
 }
@@ -588,6 +592,9 @@ func (m ConcurrentMap) DecrementOrDeleteCMapKey(key, innerKey string) bool {
 		if innerCmap, okCMap := val.(ConcurrentMap); okCMap { // inside inner cmap
 			// innerCmap.Remove(innerKey)
 			deleted = innerCmap.DecrementOrDeleteKeyNoLock(innerKey) // this is lock
+			if innerCmap.IsEmpty() {
+				delete(shard.items, key)
+			}
 		}
 	}
 	return deleted
@@ -605,6 +612,9 @@ func (m ConcurrentMap) DecrementOrDeleteMultiCMapKeys(key string, innerKeys []st
 		innerCmap, okCMap := val.(ConcurrentMap)
 		if okCMap { // inside inner cmap
 			deletedInnerKeys = innerCmap.DecrementOrDeleteMultiKeys(innerKeys)
+		}
+		if innerCmap.IsEmpty() {
+			delete(shard.items, key)
 		}
 	}
 	return deletedInnerKeys
@@ -625,6 +635,9 @@ func (m ConcurrentMap) DeleteCMapMultiKeys(key string, innerKeys []string) {
 			for _, innerKey := range innerKeys {
 				innerCmap.RemoveNoLock(innerKey) // remove inner key entry
 			}
+		}
+		if innerCmap.IsEmpty() {
+			delete(shard.items, key)
 		}
 	}
 }
