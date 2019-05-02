@@ -451,7 +451,7 @@ func (m ConcurrentMap) DecrementOrDeleteKeyNoLock(key string) bool {
 // or delete one key in CMap if key count is zero
 func (m ConcurrentMap) DecrementOrDeleteMultiKeys(keys []string) []string {
 
-	var deletedKeys = []string{}
+	var deletedKeys []string
 	for _, key := range keys { // lock each key
 		if deleted := m.DecrementOrDeleteKey(key); deleted {
 			deletedKeys = append(deletedKeys, key)
@@ -603,7 +603,7 @@ func (m ConcurrentMap) DecrementOrDeleteCMapKey(key, innerKey string) bool {
 // DecrementOrDeleteMultiCMapKeys decrement value of list of innerkeys by one
 // or delete innerkeys in inner CMap of outer key if inner key count is zero
 func (m ConcurrentMap) DecrementOrDeleteMultiCMapKeys(key string, innerKeys []string) []string {
-	var deletedInnerKeys = []string{}
+	var deletedInnerKeys []string
 	val, ok := m.Get(key)
 	shard := m.GetShard(key)
 	shard.Lock()
