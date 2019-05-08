@@ -489,11 +489,11 @@ func (m ConcurrentMap) SetCMapKey(key, innerKey string) {
 // lock shard for outer key
 // <key, CMap[InnerKey][val]>
 func (m ConcurrentMap) SetCMapMultiKeys(key string, innerKeys []string) {
-	outerShard := m.GetShard(key)
-	outerShard.Lock()
-	defer outerShard.Unlock()
+	shard := m.GetShard(key)
+	shard.Lock()
+	defer shard.Unlock()
 	// get innerCmap
-	if innerVal, ok := outerShard.items[key]; ok {
+	if innerVal, ok := shard.items[key]; ok {
 		// cmap already exist <key, innerKey>
 		// get existing inner cmap
 		if innerCmap, okConv := innerVal.(ConcurrentMap); okConv {
@@ -511,8 +511,10 @@ func (m ConcurrentMap) SetCMapMultiKeys(key string, innerKeys []string) {
 			innerCmap.SetNoLock(innerKey, struct{}{})
 		}
 		// set new inner cmap for key
-		outerShard.items[key] = innerCmap
+		shard.items[key] = innerCmap
+		log.Println("SetCMapMultiKeys", key, innerCmap.Keys())
 	}
+
 }
 
 // InsertOrIncrementCMapKey set inner key into inner CMap <key, ListofKeys>
@@ -670,7 +672,6 @@ func (m ConcurrentMap) GetInnerCMapKeys(key string) ([]string, bool) {
 		results = nil
 	} else {
 		results = innerCmap.Keys()
-		log.Println(results)
 	}
 	return results, exist
 }
