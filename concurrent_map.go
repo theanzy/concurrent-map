@@ -2,7 +2,6 @@ package cmap
 
 import (
 	"encoding/json"
-	"log"
 	"sync"
 )
 
@@ -512,9 +511,7 @@ func (m ConcurrentMap) SetCMapMultiKeys(key string, innerKeys []string) {
 		}
 		// set new inner cmap for key
 		shard.items[key] = innerCmap
-		log.Println("SetCMapMultiKeys", key, innerCmap.Keys())
 	}
-
 }
 
 // InsertOrIncrementCMapKey set inner key into inner CMap <key, ListofKeys>
