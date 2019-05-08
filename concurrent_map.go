@@ -2,6 +2,7 @@ package cmap
 
 import (
 	"encoding/json"
+	"log"
 	"sync"
 )
 
@@ -423,6 +424,7 @@ func (m ConcurrentMap) DecrementOrDeleteKey(key string) bool {
 			}
 		}
 	}
+
 	return deleted
 }
 
@@ -668,6 +670,7 @@ func (m ConcurrentMap) GetInnerCMapKeys(key string) ([]string, bool) {
 		results = nil
 	} else {
 		results = innerCmap.Keys()
+		log.Println(results)
 	}
 	return results, exist
 }
