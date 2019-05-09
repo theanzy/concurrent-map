@@ -2,6 +2,7 @@ package cmap
 
 import (
 	"encoding/json"
+	"fmt"
 	"sync"
 )
 
@@ -614,6 +615,7 @@ func (m ConcurrentMap) DeleteCMapKey(key, innerKey string) {
 		innerCmap, okCMap := val.(ConcurrentMap)
 		if okCMap {
 			cmapEmpty := innerCmap.RemoveNoLock(innerKey)
+			fmt.Printf("DeleteCMapKey, %v", cmapEmpty)
 			if cmapEmpty {
 				delete(shard.items, key)
 			}
