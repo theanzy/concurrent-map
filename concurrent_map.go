@@ -561,26 +561,6 @@ func (m ConcurrentMap) InsertOrIncrementCMapMultiKeys(key string, innerKeys []st
 
 }
 
-// DeleteCMapKey delete one innerkey in inner CMap of outer key
-// lock shard for outer key.
-//  Clear empty cmap
-func (m ConcurrentMap) DeleteCMapKey(key, innerKey string) {
-
-	val, ok := m.Get(key)
-	shard := m.GetShard(key)
-	shard.Lock()
-	defer shard.Unlock()
-	if ok {
-		innerCmap, okCMap := val.(ConcurrentMap)
-		if okCMap {
-			innerCmap.RemoveNoLock(innerKey)
-		}
-		if innerCmap.IsEmpty() {
-			delete(shard.items, key)
-		}
-	}
-}
-
 // DecrementOrDeleteCMapKey decrement value of innerkey by one
 // or delete one innerkey in inner CMap of outer key if inner key count is zero
 func (m ConcurrentMap) DecrementOrDeleteCMapKey(key, innerKey string) bool {
@@ -621,6 +601,26 @@ func (m ConcurrentMap) DecrementOrDeleteMultiCMapKeys(key string, innerKeys []st
 	return deletedInnerKeys
 }
 
+// DeleteCMapKey delete one innerkey in inner CMap of outer key
+// lock shard for outer key.
+//  Clear empty cmap
+func (m ConcurrentMap) DeleteCMapKey(key, innerKey string) {
+
+	val, ok := m.Get(key)
+	shard := m.GetShard(key)
+	shard.Lock()
+	defer shard.Unlock()
+	if ok {
+		innerCmap, okCMap := val.(ConcurrentMap)
+		if okCMap {
+			cmapEmpty := innerCmap.RemoveNoLock(innerKey)
+			if cmapEmpty {
+				delete(shard.items, key)
+			}
+		}
+	}
+}
+
 // DeleteCMapMultiKeys delete list of innerkeys in inner CMap of given outer key
 // lock shard for outer key
 func (m ConcurrentMap) DeleteCMapMultiKeys(key string, innerKeys []string) {
@@ -634,11 +634,11 @@ func (m ConcurrentMap) DeleteCMapMultiKeys(key string, innerKeys []string) {
 		innerCmap, okCnv := val.(ConcurrentMap)
 		if okCnv {
 			for _, innerKey := range innerKeys {
-				innerCmap.RemoveNoLock(innerKey) // remove inner key entry
+				cmapEmpty := innerCmap.RemoveNoLock(innerKey)
+				if cmapEmpty {
+					delete(shard.items, key)
+				}
 			}
-		}
-		if innerCmap.IsEmpty() {
-			delete(shard.items, key)
 		}
 	}
 }
@@ -685,10 +685,11 @@ func (m ConcurrentMap) SetNoLock(key string, value interface{}) {
 
 // RemoveNoLock removes an element from the map without locking shard.
 // If already lock for outer shard, locking inside will waste kernel resource
-func (m ConcurrentMap) RemoveNoLock(key string) {
+func (m ConcurrentMap) RemoveNoLock(key string) bool {
 	// Try to get shard.
 	shard := m.GetShard(key)
 	// shard.Lock()
 	delete(shard.items, key)
+	return len(shard.items) > 0
 	// shard.Unlock()
 }
