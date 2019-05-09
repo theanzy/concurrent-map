@@ -636,9 +636,9 @@ func (m ConcurrentMap) DeleteCMapMultiKeys(key string, innerKeys []string) {
 		if okCnv {
 			for _, innerKey := range innerKeys {
 				innerCmap.RemoveNoLock(innerKey)
-				if innerCmap.IsEmpty() {
-					delete(shard.items, key)
-				}
+			}
+			if innerCmap.IsEmpty() {
+				delete(shard.items, key)
 			}
 		}
 	}
