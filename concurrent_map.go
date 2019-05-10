@@ -3,6 +3,8 @@ package cmap
 import (
 	"encoding/json"
 	"sync"
+
+	mapset "github.com/deckarep/golang-set"
 )
 
 var SHARD_COUNT = 32
@@ -665,7 +667,7 @@ func (m ConcurrentMap) getCMap(key string) (ConcurrentMap, bool) {
 // <Keys, <[k1]val1, [k2]val2>> get k1,k2, ...
 func (m ConcurrentMap) GetInnerCMapKeys(key string) ([]string, bool) {
 	innerCmap, exist := m.getCMap(key)
-	var results []string
+	results := make([]string, 0, innerCmap.Count())
 	if !exist {
 		results = nil
 	} else {
@@ -693,4 +695,137 @@ func (m ConcurrentMap) RemoveNoLock(key string) {
 	delete(shard.items, key)
 	// return len(shard.items) > 0
 	// shard.Unlock()
+}
+
+// Using set -----------------------------------------------------------------
+
+// SetGSetKey set inner key into inner set <key, ListofKeys>
+// lock shard for outer key
+func (m ConcurrentMap) SetGSetKey(key, innerKey string) {
+	outerShard := m.GetShard(key)
+	outerShard.Lock()
+	defer outerShard.Unlock()
+
+	// get innerCmap
+	if innerVal, ok := outerShard.items[key]; ok {
+		// cmap already exist for <key, innerKey>
+		mySet, okSet := innerVal.(*mapset.Set)
+		if okSet {
+			(*mySet).Add(innerKey)
+		}
+	} else {
+		// key or innerkey not exist
+		mySet := mapset.NewThreadUnsafeSet()
+		mySet.Add(innerKey) // create new set
+		// set new gset
+		outerShard.items[key] = &mySet
+	}
+}
+
+// SetGSetMultiKeys set lists of inner keys into inner gset
+// lock shard for outer key
+// <key, CMap[InnerKey][val]>
+func (m ConcurrentMap) SetGSetMultiKeys(key string, innerKeys []string) {
+	shard := m.GetShard(key)
+	shard.Lock()
+	defer shard.Unlock()
+	// get innerCmap
+	innerVal, ok := shard.items[key]
+	if ok {
+		// cmap already exist <key, innerKey>
+		// get existing inner cmap
+		mySet, okConv := innerVal.(*mapset.Set)
+		if okConv {
+			// set inner keys into cmap
+			for _, innerKey := range innerKeys {
+				(*mySet).Add(innerKey)
+			}
+		}
+	} else {
+		// key or innerkey not exist
+		mySet := mapset.NewThreadUnsafeSet() // create new ConcurrentMap
+		// set keys into new ConcurrentMap
+		for _, innerKey := range innerKeys {
+			mySet.Add(innerKey)
+		}
+		// set new inner cmap for key
+		shard.items[key] = &mySet
+	}
+}
+
+// DeleteGSetKey delete one innerkey in inner CMap of outer key
+// lock shard for outer key.
+//  Clear empty cmap
+func (m ConcurrentMap) DeleteGSetKey(key, innerKey string) {
+
+	val, ok := m.Get(key)
+	shard := m.GetShard(key)
+	shard.Lock()
+	defer shard.Unlock()
+	if ok {
+		mySet, okSet := val.(*mapset.Set)
+		if okSet {
+			(*mySet).Remove(innerKey)
+
+			if (*mySet).Cardinality() == 0 {
+				delete(shard.items, key)
+			}
+		}
+	}
+}
+
+// DeleteGSetMultiKeys delete list of innerkeys in inner Gset of given outer key
+// lock shard for outer key
+func (m ConcurrentMap) DeleteGSetMultiKeys(key string, innerKeys []string) {
+
+	val, ok := m.Get(key)
+	shard := m.GetShard(key)
+	shard.Lock()
+	defer shard.Unlock()
+
+	if ok { // cmap exist for key
+		mySet, okSet := val.(*mapset.Set)
+		if okSet {
+			for _, innerKey := range innerKeys {
+				(*mySet).Remove(innerKey)
+			}
+			if (*mySet).Cardinality() == 0 {
+				delete(shard.items, key)
+			}
+		}
+	}
+}
+
+// GetGSet returns inner gset for key
+func (m ConcurrentMap) GetGSet(key string) (*mapset.Set, bool) {
+	// read lock
+	// Get shard
+	shard := m.GetShard(key)
+	shard.RLock()
+	defer shard.RUnlock()
+	// Get item from shard for given key.
+	val, exist := shard.items[key]
+	if !exist { // outer key does not exists
+		return nil, false
+	}
+	mySet, okSet := val.(*mapset.Set)
+
+	return mySet, okSet
+}
+
+// GetGSetKeys Get list of inner keys in inner gset
+// <Keys, <[k1]val1, [k2]val2>> get k1,k2, ...
+func (m ConcurrentMap) GetGSetKeys(key string) ([]string, bool) {
+	mySet, exist := m.GetGSet(key)
+	results := make([]string, (*mySet).Cardinality())
+	if !exist {
+		results = nil
+	} else {
+
+		for itr := range (*mySet).Iter() {
+			key := itr.(string)
+			results = append(results, key)
+		}
+	}
+	return results, exist
 }
