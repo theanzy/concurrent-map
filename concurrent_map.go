@@ -818,14 +818,8 @@ func (m ConcurrentMap) GetGSet(key string) (*mapset.Set, bool) {
 func (m ConcurrentMap) GetGSetKeys(key string) ([]string, bool) {
 	mySet, exist := m.GetGSet(key)
 	results := make([]string, (*mySet).Cardinality())
-	if !exist {
-		results = nil
-	} else {
-
-		for itr := range (*mySet).Iter() {
-			key := itr.(string)
-			results = append(results, key)
-		}
+	for i, k := range (*mySet).ToSlice() {
+		results[i] = k.(string)
 	}
 	return results, exist
 }
