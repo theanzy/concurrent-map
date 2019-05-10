@@ -667,7 +667,7 @@ func (m ConcurrentMap) getCMap(key string) (ConcurrentMap, bool) {
 // <Keys, <[k1]val1, [k2]val2>> get k1,k2, ...
 func (m ConcurrentMap) GetInnerCMapKeys(key string) ([]string, bool) {
 	innerCmap, exist := m.getCMap(key)
-	results := make([]string, 0, innerCmap.Count())
+	var results []string
 	if !exist {
 		results = nil
 	} else {
@@ -817,10 +817,14 @@ func (m ConcurrentMap) GetGSet(key string) (*mapset.Set, bool) {
 // <Keys, <[k1]val1, [k2]val2>> get k1,k2, ...
 func (m ConcurrentMap) GetGSetKeys(key string) ([]string, bool) {
 	mySet, exist := m.GetGSet(key)
-	results := make([]string, 0, (*mySet).Cardinality())
-	for iter := range (*mySet).Iter() {
-		k := iter.(string)
-		results = append(results, k)
+	var results []string
+	if exist {
+		results = make([]string, 0, (*mySet).Cardinality())
+		for iter := range (*mySet).Iter() {
+			k := iter.(string)
+			results = append(results, k)
+		}
 	}
+
 	return results, exist
 }
