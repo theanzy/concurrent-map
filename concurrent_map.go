@@ -753,6 +753,21 @@ func (m ConcurrentMap) SetGSetMultiKeys(key string, innerKeys []string) {
 	}
 }
 
+// HasGSetKey check if inner gset has inner key
+func (m ConcurrentMap) HasGSetKey(key, innerKey string) bool {
+	val, ok := m.Get(key)
+	shard := m.GetShard(key)
+	shard.Lock()
+	defer shard.Unlock()
+	if ok {
+		mySet, okSet := val.(*mapset.Set)
+		if okSet {
+			return (*mySet).Contains(innerKey)
+		}
+	}
+	return false
+}
+
 // DeleteGSetKey delete one innerkey in inner CMap of outer key
 // lock shard for outer key.
 //  Clear empty cmap
