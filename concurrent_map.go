@@ -757,8 +757,8 @@ func (m ConcurrentMap) SetGSetMultiKeys(key string, innerKeys []string) {
 func (m ConcurrentMap) HasGSetKey(key, innerKey string) bool {
 	val, ok := m.Get(key)
 	shard := m.GetShard(key)
-	shard.Lock()
-	defer shard.Unlock()
+	shard.RLock()
+	defer shard.RUnlock()
 	if ok {
 		mySet, okSet := val.(*mapset.Set)
 		if okSet {
