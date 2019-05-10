@@ -817,9 +817,10 @@ func (m ConcurrentMap) GetGSet(key string) (*mapset.Set, bool) {
 // <Keys, <[k1]val1, [k2]val2>> get k1,k2, ...
 func (m ConcurrentMap) GetGSetKeys(key string) ([]string, bool) {
 	mySet, exist := m.GetGSet(key)
-	results := make([]string, (*mySet).Cardinality())
-	for i, k := range (*mySet).ToSlice() {
-		results[i] = k.(string)
+	results := make([]string, 0, (*mySet).Cardinality())
+	for iter := range (*mySet).Iter() {
+		k := iter.(string)
+		results = append(results, k)
 	}
 	return results, exist
 }
