@@ -701,17 +701,18 @@ func (m ConcurrentMap) RemoveNoLock(key string) {
 
 // SetGSetKey set inner key into inner set <key, ListofKeys>
 // lock shard for outer key
-func (m ConcurrentMap) SetGSetKey(key, innerKey string) {
+// false if gset already has key
+func (m ConcurrentMap) SetGSetKey(key, innerKey string) bool {
 	outerShard := m.GetShard(key)
 	outerShard.Lock()
 	defer outerShard.Unlock()
-
+	var isnew bool
 	// get innerCmap
 	if innerVal, ok := outerShard.items[key]; ok {
 		// cmap already exist for <key, innerKey>
 		mySet, okSet := innerVal.(*mapset.Set)
 		if okSet {
-			(*mySet).Add(innerKey)
+			isnew = (*mySet).Add(innerKey)
 		}
 	} else {
 		// key or innerkey not exist
@@ -720,6 +721,7 @@ func (m ConcurrentMap) SetGSetKey(key, innerKey string) {
 		// set new gset
 		outerShard.items[key] = &mySet
 	}
+	return isnew
 }
 
 // SetGSetMultiKeys set lists of inner keys into inner gset
