@@ -717,7 +717,7 @@ func (m ConcurrentMap) SetGSetKey(key, innerKey string) bool {
 	} else {
 		// key or innerkey not exist
 		mySet := mapset.NewThreadUnsafeSet()
-		mySet.Add(innerKey) // create new set
+		isnew = mySet.Add(innerKey) // create new set
 		// set new gset
 		outerShard.items[key] = &mySet
 	}
