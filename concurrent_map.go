@@ -706,9 +706,11 @@ func (m ConcurrentMap) SetGSetKey(key, innerKey string) bool {
 	outerShard := m.GetShard(key)
 	outerShard.Lock()
 	defer outerShard.Unlock()
-	var isnew bool
-	// get innerCmap
-	if innerVal, ok := outerShard.items[key]; ok {
+	// whether item was added
+	isnew := false
+	// get gset
+	innerVal, ok := outerShard.items[key]
+	if ok {
 		// cmap already exist for <key, innerKey>
 		mySet, okSet := innerVal.(*mapset.Set)
 		if okSet {
