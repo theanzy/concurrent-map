@@ -877,7 +877,7 @@ func (m ConcurrentMap) SetpQueue(key string, value interface{}, priority float64
 }
 
 // PopQueue pop queue for key
-func (m ConcurrentMap) PopQueue(key string) interface{} {
+func (m ConcurrentMap) PopQueue(key string) (interface{}, bool) {
 
 	val, ok := m.Get(key)
 	shard := m.GetShard(key)
@@ -888,13 +888,14 @@ func (m ConcurrentMap) PopQueue(key string) interface{} {
 		if okpq {
 			v, err := oldPQ.Pop()
 			if err != nil {
-				return nil
+				return nil, false
 			}
 			if oldPQ.Len() == 0 {
 				delete(shard.items, key)
+				return nil, false
 			}
-			return v
+			return v, true
 		}
 	}
-	return nil
+	return nil, false
 }
