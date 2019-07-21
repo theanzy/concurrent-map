@@ -892,7 +892,6 @@ func (m ConcurrentMap) PopQueue(key string) (interface{}, bool) {
 			}
 			if oldPQ.Len() == 0 {
 				delete(shard.items, key)
-				return nil, false
 			}
 			return v, true
 		}
