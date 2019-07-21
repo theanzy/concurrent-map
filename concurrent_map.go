@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"sync"
 
+	pq "github.com/jupp0r/go-priority-queue"
+
 	mapset "github.com/deckarep/golang-set"
 )
 
@@ -844,6 +846,55 @@ func (m ConcurrentMap) GetGSetKeys(key string) ([]string, bool) {
 			results = append(results, k)
 		}
 	}
-
 	return results, exist
+}
+
+// Using Queue -----------------------------------------------------------------
+
+// SetpQueue (topic, payloads, ...)
+func (m ConcurrentMap) SetpQueue(key string, value interface{}, priority float64) bool {
+	outerShard := m.GetShard(key)
+	outerShard.Lock()
+	defer outerShard.Unlock()
+	// whether item was added
+	isnew := false
+	// get gset
+	innerVal, ok := outerShard.items[key]
+	if ok {
+		// cmap already exist for <key, innerKey>
+		oldPQ, okpq := innerVal.(*pq.PriorityQueue)
+		if okpq {
+			(*oldPQ).Insert(value, priority)
+		}
+	} else {
+		// key or innerkey not exist
+		newPQ := pq.New()
+		newPQ.Insert(value, priority) // create new set
+		// set new gset
+		outerShard.items[key] = &newPQ
+	}
+	return isnew
+}
+
+// PopQueue pop queue for key
+func (m ConcurrentMap) PopQueue(key string) interface{} {
+
+	val, ok := m.Get(key)
+	shard := m.GetShard(key)
+	shard.Lock()
+	defer shard.Unlock()
+	if ok {
+		oldPQ, okpq := val.(*pq.PriorityQueue)
+		if okpq {
+			v, err := oldPQ.Pop()
+			if err != nil {
+				return nil
+			}
+			if oldPQ.Len() == 0 {
+				delete(shard.items, key)
+			}
+			return v
+		}
+	}
+	return nil
 }
