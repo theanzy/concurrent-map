@@ -851,8 +851,8 @@ func (m ConcurrentMap) GetGSetKeys(key string) ([]string, bool) {
 
 // Using Queue -----------------------------------------------------------------
 
-// SetpQueue (topic, payloads, ...)
-func (m ConcurrentMap) SetpQueue(key string, value interface{}, priority float64) bool {
+// InsertpQueue key, ({topic, payloads}, ...), priority
+func (m ConcurrentMap) InsertpQueue(key string, value interface{}, priority float64) bool {
 	outerShard := m.GetShard(key)
 	outerShard.Lock()
 	defer outerShard.Unlock()
