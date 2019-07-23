@@ -488,6 +488,29 @@ func (m ConcurrentMap) SetCMapKey(key, innerKey string) {
 	}
 }
 
+// SetCMapKeyVal set inner key into inner CMap <key, ListofKeys> (cmap,cmap, gset)
+// lock shard for outer key
+// <key, CMap[InnerKey][val]>
+func (m ConcurrentMap) SetCMapKeyVal(key, innerKey, innerVal string) {
+	outerShard := m.GetShard(key)
+	outerShard.Lock()
+	defer outerShard.Unlock()
+
+	// get innerCmap
+	if innerVal, ok := outerShard.items[key]; ok {
+		// cmap already exist for <key, innerKey>
+		if innerCmap, okCMap := innerVal.(ConcurrentMap); okCMap {
+			innerCmap.SetGSetKey(innerKey, innerVal)
+		}
+	} else {
+		// key or innerkey not exist
+		var innerCmap = New()                    // create new ConcurrentMap
+		innerCmap.SetGSetKey(innerKey, innerVal) // set inner key with struct
+		// set new cmap
+		outerShard.items[key] = innerCmap
+	}
+}
+
 // SetCMapMultiKeys set lists of inner keys into inner CMap
 // lock shard for outer key
 // <key, CMap[InnerKey][val]>
@@ -676,6 +699,24 @@ func (m ConcurrentMap) GetInnerCMapKeys(key string) ([]string, bool) {
 		results = innerCmap.Keys()
 	}
 	return results, exist
+}
+
+// GetInnerCMapValues Get list of inner values in inner ConcurrentMap
+// <Keys, <[k1]val1, [k2]val2>> get k1,k2, ...
+func (m ConcurrentMap) GetInnerCMapValues(key, innnerKey string) ([]string, bool) {
+	innerCmap, okcmap := m.getCMap(key)
+	var results []string
+	if !okcmap {
+		results = nil
+	} else {
+		iresults, ok := innerCmap.GetGSetKeys(innnerKey)
+		if ok {
+			for _, v := range iresults {
+				results = append(results, v.(string))
+			}
+		}
+	}
+	return results, okcmap
 }
 
 // SetNoLock sets the given value under the specified key without locking shard.
