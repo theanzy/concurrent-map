@@ -704,7 +704,7 @@ func (m ConcurrentMap) RemoveNoLock(key string) {
 // SetGSetKey set inner key into inner set <key, ListofKeys>
 // lock shard for outer key
 // false if gset already has key
-func (m ConcurrentMap) SetGSetKey(key, innerKey string) bool {
+func (m ConcurrentMap) SetGSetKey(key string, innerKey interface{}) bool {
 	outerShard := m.GetShard(key)
 	outerShard.Lock()
 	defer outerShard.Unlock()
@@ -731,7 +731,7 @@ func (m ConcurrentMap) SetGSetKey(key, innerKey string) bool {
 // SetGSetMultiKeys set lists of inner keys into inner gset
 // lock shard for outer key
 // <key, CMap[InnerKey][val]>
-func (m ConcurrentMap) SetGSetMultiKeys(key string, innerKeys []string) {
+func (m ConcurrentMap) SetGSetMultiKeys(key string, innerKeys []interface{}) {
 	shard := m.GetShard(key)
 	shard.Lock()
 	defer shard.Unlock()
@@ -760,7 +760,7 @@ func (m ConcurrentMap) SetGSetMultiKeys(key string, innerKeys []string) {
 }
 
 // HasGSetKey check if inner gset has inner key
-func (m ConcurrentMap) HasGSetKey(key, innerKey string) bool {
+func (m ConcurrentMap) HasGSetKey(key string, innerKey interface{}) bool {
 	val, ok := m.Get(key)
 	shard := m.GetShard(key)
 	shard.RLock()
@@ -777,7 +777,7 @@ func (m ConcurrentMap) HasGSetKey(key, innerKey string) bool {
 // DeleteGSetKey delete one innerkey in inner CMap of outer key
 // lock shard for outer key.
 //  Clear empty cmap
-func (m ConcurrentMap) DeleteGSetKey(key, innerKey string) {
+func (m ConcurrentMap) DeleteGSetKey(key string, innerKey interface{}) {
 
 	val, ok := m.Get(key)
 	shard := m.GetShard(key)
@@ -797,7 +797,7 @@ func (m ConcurrentMap) DeleteGSetKey(key, innerKey string) {
 
 // DeleteGSetMultiKeys delete list of innerkeys in inner Gset of given outer key
 // lock shard for outer key
-func (m ConcurrentMap) DeleteGSetMultiKeys(key string, innerKeys []string) {
+func (m ConcurrentMap) DeleteGSetMultiKeys(key string, innerKeys []interface{}) {
 
 	val, ok := m.Get(key)
 	shard := m.GetShard(key)
@@ -836,13 +836,13 @@ func (m ConcurrentMap) GetGSet(key string) (*mapset.Set, bool) {
 
 // GetGSetKeys Get list of inner keys in inner gset
 // <Keys, <[k1]val1, [k2]val2>> get k1,k2, ...
-func (m ConcurrentMap) GetGSetKeys(key string) ([]string, bool) {
+func (m ConcurrentMap) GetGSetKeys(key string) ([]interface{}, bool) {
 	mySet, exist := m.GetGSet(key)
-	var results []string
+	var results []interface{}
 	if exist {
-		results = make([]string, 0, (*mySet).Cardinality())
+		results = make([]interface{}, 0, (*mySet).Cardinality())
 		for iter := range (*mySet).Iter() {
-			k := iter.(string)
+			k := iter
 			results = append(results, k)
 		}
 	}
