@@ -497,9 +497,9 @@ func (m ConcurrentMap) SetCMapKeyVal(key, innerKey, innerVal string) {
 	defer outerShard.Unlock()
 
 	// get innerCmap
-	if innerVal, ok := outerShard.items[key]; ok {
+	if innerCmapVal, ok := outerShard.items[key]; ok {
 		// cmap already exist for <key, innerKey>
-		if innerCmap, okCMap := innerVal.(ConcurrentMap); okCMap {
+		if innerCmap, okCMap := innerCmapVal.(ConcurrentMap); okCMap {
 			innerCmap.SetGSetKey(innerKey, innerVal)
 		}
 	} else {
@@ -525,7 +525,7 @@ func (m ConcurrentMap) SetCMapMultiKeys(key string, innerKeys []string) {
 		if innerCmap, okConv := innerVal.(ConcurrentMap); okConv {
 			// set inner keys into cmap
 			for _, innerKey := range innerKeys {
-				innerCmap.SetNoLock(innerKey, struct{}{})
+				innerCmap.SetGSetKey(innerKey, struct{}{})
 			}
 		}
 
@@ -688,6 +688,21 @@ func (m ConcurrentMap) getCMap(key string) (ConcurrentMap, bool) {
 	return innerCMap, okConv
 }
 
+// getCMap returns inner ConcurrentMap for key
+func (m ConcurrentMap) getCMapNoLock(key string) (ConcurrentMap, bool) {
+	// read lock
+	// Get shard
+	shard := m.GetShard(key)
+	// Get item from shard for given key.
+	val, exist := shard.items[key]
+	if !exist { // outer key does not exists
+		return nil, false
+	}
+	innerCMap, okConv := val.(ConcurrentMap)
+
+	return innerCMap, okConv
+}
+
 // GetInnerCMapKeys Get list of inner keys in inner ConcurrentMap
 // <Keys, <[k1]val1, [k2]val2>> get k1,k2, ...
 func (m ConcurrentMap) GetInnerCMapKeys(key string) ([]string, bool) {
@@ -702,21 +717,21 @@ func (m ConcurrentMap) GetInnerCMapKeys(key string) ([]string, bool) {
 }
 
 // GetInnerCMapValues Get list of inner values in inner ConcurrentMap
-// <Keys, <[k1]val1, [k2]val2>> get k1,k2, ...
+// <Keys, <[k1]val1, [k2]val2>> get val1, val2, ...
 func (m ConcurrentMap) GetInnerCMapValues(key, innnerKey string) ([]string, bool) {
-	innerCmap, okcmap := m.getCMap(key)
-	var results []string
+	shard := m.GetShard(key)
+	shard.RLock()
+	defer shard.RUnlock()
+	innerCmap, okcmap := m.getCMapNoLock(key)
 	if !okcmap {
-		results = nil
-	} else {
-		iresults, ok := innerCmap.GetGSetKeys(innnerKey)
-		if ok {
-			for _, v := range iresults {
-				results = append(results, v.(string))
-			}
-		}
+		return nil, false
 	}
-	return results, okcmap
+
+	iresults, ok := innerCmap.GetGSetStrKeys(innnerKey)
+	if ok {
+		return iresults, ok
+	}
+	return nil, false
 }
 
 // SetNoLock sets the given value under the specified key without locking shard.
@@ -742,28 +757,29 @@ func (m ConcurrentMap) RemoveNoLock(key string) {
 
 // Using set -----------------------------------------------------------------
 
-// SetGSetKey set inner key into inner set <key, ListofKeys>
+// SetGSetKey set inner key into inner set <key(Cmap), interkey(gset)>
 // lock shard for outer key
 // false if gset already has key
 func (m ConcurrentMap) SetGSetKey(key string, innerKey interface{}) bool {
-	outerShard := m.GetShard(key)
+	outerShard := m.GetShard(key) //cmap
 	outerShard.Lock()
 	defer outerShard.Unlock()
 	// whether item was added
 	isnew := false
-	// get gset
-	innerVal, ok := outerShard.items[key]
-	if ok {
+	innerVal, ok := outerShard.items[key] // gset
+	if ok {                               // get gset
 		// cmap already exist for <key, innerKey>
 		mySet, okSet := innerVal.(*mapset.Set)
 		if okSet {
 			isnew = (*mySet).Add(innerKey)
+			// fmt.Println("SetGSetKey", isnew, innerKey)
 		}
 	} else {
 		// key or innerkey not exist
 		mySet := mapset.NewThreadUnsafeSet()
 		isnew = mySet.Add(innerKey) // create new set
 		// set new gset
+		// fmt.Println("SetGSetKey", isnew, innerKey)
 		outerShard.items[key] = &mySet
 	}
 	return isnew
@@ -875,9 +891,27 @@ func (m ConcurrentMap) GetGSet(key string) (*mapset.Set, bool) {
 	return mySet, okSet
 }
 
+// GetGSetNoLock returns inner gset for key
+func (m ConcurrentMap) GetGSetNoLock(key string) (*mapset.Set, bool) {
+	// read lock
+	// Get shard
+	shard := m.GetShard(key)
+	// Get item from shard for given key.
+	val, exist := shard.items[key]
+	if !exist { // outer key does not exists
+		return nil, false
+	}
+	mySet, okSet := val.(*mapset.Set)
+
+	return mySet, okSet
+}
+
 // GetGSetKeys Get list of inner keys in inner gset
 // <Keys, <[k1]val1, [k2]val2>> get k1,k2, ...
 func (m ConcurrentMap) GetGSetKeys(key string) ([]interface{}, bool) {
+	shard := m.GetShard(key)
+	shard.RLock()
+	defer shard.RUnlock()
 	mySet, exist := m.GetGSet(key)
 	var results []interface{}
 	if exist {
@@ -888,6 +922,25 @@ func (m ConcurrentMap) GetGSetKeys(key string) ([]interface{}, bool) {
 		}
 	}
 	return results, exist
+}
+
+// GetGSetStrKeys Get list of inner keys in inner gset
+// <Keys, <[k1]val1, [k2]val2>> get k1,k2, ...
+func (m ConcurrentMap) GetGSetStrKeys(key string) ([]string, bool) {
+
+	mySet, exist := m.GetGSetNoLock(key)
+	var results []string
+	if exist {
+
+		results = make([]string, 0, (*mySet).Cardinality())
+		for iter := range (*mySet).Iter() {
+			if str, ok := iter.(string); ok {
+				results = append(results, str)
+			}
+		}
+		return results, exist
+	}
+	return nil, false
 }
 
 // Using Queue -----------------------------------------------------------------
@@ -901,6 +954,7 @@ func (m ConcurrentMap) InsertpQueue(key string, value interface{}, priority floa
 	isnew := false
 	// get gset
 	innerVal, ok := outerShard.items[key]
+
 	if ok {
 		// cmap already exist for <key, innerKey>
 		oldPQ, okpq := innerVal.(*pq.PriorityQueue)
@@ -910,9 +964,11 @@ func (m ConcurrentMap) InsertpQueue(key string, value interface{}, priority floa
 	} else {
 		// key or innerkey not exist
 		newPQ := pq.New()
+		// fmt.Println("InsertpQueue", value)
 		newPQ.Insert(value, priority) // create new set
 		// set new gset
 		outerShard.items[key] = &newPQ
+		isnew = true
 	}
 	return isnew
 }
@@ -928,6 +984,7 @@ func (m ConcurrentMap) PopQueue(key string) (interface{}, bool) {
 		oldPQ, okpq := val.(*pq.PriorityQueue)
 		if okpq {
 			v, err := oldPQ.Pop()
+
 			if err != nil {
 				return nil, false
 			}
@@ -936,6 +993,40 @@ func (m ConcurrentMap) PopQueue(key string) (interface{}, bool) {
 			}
 			return v, true
 		}
+	}
+	return nil, false
+}
+
+// PopQueueStr pop queue for key
+func (m ConcurrentMap) PopQueueStr(key string) (string, bool) {
+
+	val, ok := m.Get(key)
+	shard := m.GetShard(key)
+	shard.Lock()
+	defer shard.Unlock()
+	if ok {
+		oldPQ, okpq := val.(*pq.PriorityQueue)
+		if okpq {
+			v, err := oldPQ.Pop()
+
+			if err != nil {
+				return "", false
+			}
+			if oldPQ.Len() == 0 {
+				delete(shard.items, key)
+			}
+			if str, ok := v.(string); ok {
+				return str, true
+			}
+		}
+	}
+	return "", false
+}
+
+// PopQueueBytes pop queue for key
+func (m ConcurrentMap) PopQueueBytes(key string) ([]byte, bool) {
+	if result, ok := m.PopQueueStr(key); ok {
+		return []byte(result), true
 	}
 	return nil, false
 }
