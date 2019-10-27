@@ -16,6 +16,26 @@ func NewNestedQueue() *NestedQueue {
 	return m
 }
 
+// IsEmpty return true if cmap empty
+func (m *NestedQueue) IsEmpty() bool {
+	return m._cmap.IsEmpty()
+}
+
+// Has return true if cmap has key
+func (m *NestedQueue) Has(key string) bool {
+	return m._cmap.Has(key)
+}
+
+// Keys returns all keys in cmap
+func (m *NestedQueue) Keys() []string {
+	return m._cmap.Keys()
+}
+
+// Count returns number of elements
+func (m *NestedQueue) Count() int {
+	return m._cmap.Count()
+}
+
 // InsertpQueue key, ({topic, payloads}, ...), priority
 func (m *NestedQueue) InsertpQueue(key string, value interface{}, priority float64) bool {
 	outerShard := m._cmap.GetShard(key)

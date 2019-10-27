@@ -12,6 +12,26 @@ func NewNestedCMap() *NestedCMap {
 	return m
 }
 
+// IsEmpty return true if cmap empty
+func (m *NestedCMap) IsEmpty() bool {
+	return m._cmap.IsEmpty()
+}
+
+// Has return true if cmap has key
+func (m *NestedCMap) Has(key string) bool {
+	return m._cmap.Has(key)
+}
+
+// Keys returns all keys in cmap
+func (m *NestedCMap) Keys() []string {
+	return m._cmap.Keys()
+}
+
+// Count returns number of elements
+func (m *NestedCMap) Count() int {
+	return m._cmap.Count()
+}
+
 // SetCMapKey set inner key into inner CMap <key, ListofKeys>
 // lock shard for outer key
 // <key, CMap[InnerKey][val]>

@@ -14,6 +14,26 @@ func NewNestedGSet() *NestedGSet {
 	return m
 }
 
+// IsEmpty return true if cmap empty
+func (m *NestedGSet) IsEmpty() bool {
+	return m._cmap.IsEmpty()
+}
+
+// Has return true if cmap has key
+func (m *NestedGSet) Has(key string) bool {
+	return m._cmap.Has(key)
+}
+
+// Keys returns all keys in cmap
+func (m *NestedGSet) Keys() []string {
+	return m._cmap.Keys()
+}
+
+// Count returns number of elements
+func (m *NestedGSet) Count() int {
+	return m._cmap.Count()
+}
+
 // SetGSetKey set inner key into inner set <key(Cmap), interkey(gset)>
 // lock shard for outer key
 // false if gset already has key
