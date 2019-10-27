@@ -41,6 +41,16 @@ func (m *NestedQueue) Remove(key string) {
 	m._cmap.Remove(key)
 }
 
+// Set key in cmap
+func (m *NestedQueue) Set(key string, value interface{}) {
+	m._cmap.Set(key, value)
+}
+
+// Pop key in cmap and return (value, isexist bool)
+func (m *NestedQueue) Pop(key string) (interface{}, bool) {
+	return m._cmap.Pop(key)
+}
+
 // InsertpQueue key, ({topic, payloads}, ...), priority
 func (m *NestedQueue) InsertpQueue(key string, value interface{}, priority float64) bool {
 	outerShard := m._cmap.GetShard(key)

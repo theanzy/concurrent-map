@@ -39,6 +39,16 @@ func (m *NestedGSet) Remove(key string) {
 	m._cmap.Remove(key)
 }
 
+// Set key in cmap
+func (m *NestedGSet) Set(key string, value interface{}) {
+	m._cmap.Set(key, value)
+}
+
+// Pop key in cmap and return (value, isexist bool)
+func (m *NestedGSet) Pop(key string) (interface{}, bool) {
+	return m._cmap.Pop(key)
+}
+
 // SetGSetKey set inner key into inner set <key(Cmap), interkey(gset)>
 // lock shard for outer key
 // false if gset already has key
