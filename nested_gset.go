@@ -34,6 +34,11 @@ func (m *NestedGSet) Count() int {
 	return m._cmap.Count()
 }
 
+// Remove key in cmap
+func (m *NestedGSet) Remove(key string) {
+	m._cmap.Remove(key)
+}
+
 // SetGSetKey set inner key into inner set <key(Cmap), interkey(gset)>
 // lock shard for outer key
 // false if gset already has key

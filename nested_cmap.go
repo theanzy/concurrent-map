@@ -32,6 +32,11 @@ func (m *NestedCMap) Count() int {
 	return m._cmap.Count()
 }
 
+// Remove key in cmap
+func (m *NestedCMap) Remove(key string) {
+	m._cmap.Remove(key)
+}
+
 // SetCMapKey set inner key into inner CMap <key, ListofKeys>
 // lock shard for outer key
 // <key, CMap[InnerKey][val]>
