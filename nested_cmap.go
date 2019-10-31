@@ -89,7 +89,7 @@ func (m *NestedCMap) SetInnerKeyVal(key, innerKey, innerVal string) {
 
 // SetCMapKeyValNoLock set inner key into inner NestedGSet (CMapOuter,cmap inner, gset (values))
 // CMap<key, NestedGSet<InnerKey[vals,...]>>
-func (m *NestedCMap) SetCMapKeyValNoLock(key, innerKey, innerVal string) {
+func (m *NestedCMap) SetInnerKeyValNoLock(key, innerKey, innerVal string) {
 	outerShard := m._cmap.GetShard(key)
 	if nestedGSetVal, exist := outerShard.items[key]; exist { // nested gest exist in cmap for key
 		if nestedGSet, okGSet := nestedGSetVal.(*NestedGSet); okGSet { // convert
@@ -106,7 +106,7 @@ func (m *NestedCMap) SetCMapKeyValNoLock(key, innerKey, innerVal string) {
 // SetCMapMultiInnerKeys set lists of inner keys into inner NestedGSet
 // lock shard for outer key
 // CMap<key, NestedGSet<InnerKey[vals,...]>>
-func (m *NestedCMap) SetCMapMultiInnerKeys(key string, innerKeys []string) {
+func (m *NestedCMap) SetMultiInnerKeys(key string, innerKeys []string) {
 	outerShard := m._cmap.GetShard(key)
 	outerShard.Lock() // lock
 	defer outerShard.Unlock()
@@ -235,9 +235,9 @@ func (m *NestedCMap) getNestedGSetNoLock(key string) (*NestedGSet, bool) {
 	return nil, false
 }
 
-// GetNestedGSetKeys Get list of inner keys in inner NestedGset
+// GetInnerKeys Get list of inner keys in inner NestedGset
 // <Keys, <[k1]val1, [k2]val2>> get k1,k2, ...
-func (m *NestedCMap) GetNestedGSetKeys(key string) ([]string, bool) {
+func (m *NestedCMap) GetInnerKeys(key string) ([]string, bool) {
 	shard := m._cmap.GetShard(key)
 	shard.RLock()
 	defer shard.RUnlock()
@@ -247,17 +247,17 @@ func (m *NestedCMap) GetNestedGSetKeys(key string) ([]string, bool) {
 	return nil, false
 }
 
-// GetNestedGSetKeysNoLock Get list of innerKeys in inner NestedGset
-func (m *NestedCMap) GetNestedGSetKeysNoLock(key string) ([]string, bool) {
+// GGetInnerKeysNoLock Get list of innerKeys in inner NestedGset
+func (m *NestedCMap) GGetInnerKeysNoLock(key string) ([]string, bool) {
 	if nestedGSet, exist := m.getNestedGSetNoLock(key); exist {
 		return nestedGSet._cmap.Keys(), true
 	}
 	return nil, false
 }
 
-// GetNestedValues Get list of inner values in inner NestedGset
+// GetInnerValues Get list of inner values in inner NestedGset
 // CMap<key, NestedGSet<InnerKey[vals,...]>> get [vals,...] ...
-func (m *NestedCMap) GetNestedValues(key, innerKey string) ([]string, bool) {
+func (m *NestedCMap) GetInnerValues(key, innerKey string) ([]string, bool) {
 	outerShard := m._cmap.GetShard(key)
 	outerShard.RLock()
 	defer outerShard.RUnlock()
@@ -273,9 +273,9 @@ func (m *NestedCMap) GetNestedValues(key, innerKey string) ([]string, bool) {
 	return nil, false
 }
 
-// GetNestedValuesNoLock Get list of inner values in inner NestedGset
+// GetInnerValuesNoLock Get list of inner values in inner NestedGset
 // CMap<key, NestedGSet<InnerKey[vals,...]>> get [vals,...] ...
-func (m *NestedCMap) GetNestedValuesNoLock(key, innerKey string) ([]string, bool) {
+func (m *NestedCMap) GetInnerValuesNoLock(key, innerKey string) ([]string, bool) {
 	outerShard := m._cmap.GetShard(key)
 	// get innerCmap
 	if nestedGsetVal, exist := outerShard.items[key]; exist {
