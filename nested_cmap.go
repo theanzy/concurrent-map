@@ -83,11 +83,11 @@ func (m *NestedCMap) SetInnerKeyVal(key, innerKey, innerVal string) {
 		// key or innerkey not exist
 		nestedGSet := NewNestedGSet()                 // create new NestedGSet
 		nestedGSet.SetValueNoLock(innerKey, innerVal) // set inner key with struct
-		outerShard.items[key] = nestedGSetVal         // set nestedGset in cmap for key
+		outerShard.items[key] = nestedGSet            // set nestedGset in cmap for key
 	}
 }
 
-// SetCMapKeyValNoLock set inner key into inner NestedGSet (CMapOuter,cmap inner, gset (values))
+// SetInnerKeyValNoLock set inner key into inner NestedGSet (CMapOuter,cmap inner, gset (values))
 // CMap<key, NestedGSet<InnerKey[vals,...]>>
 func (m *NestedCMap) SetInnerKeyValNoLock(key, innerKey, innerVal string) {
 	outerShard := m._cmap.GetShard(key)
@@ -103,7 +103,7 @@ func (m *NestedCMap) SetInnerKeyValNoLock(key, innerKey, innerVal string) {
 	}
 }
 
-// SetCMapMultiInnerKeys set lists of inner keys into inner NestedGSet
+// SetMultiInnerKeys set lists of inner keys into inner NestedGSet
 // lock shard for outer key
 // CMap<key, NestedGSet<InnerKey[vals,...]>>
 func (m *NestedCMap) SetMultiInnerKeys(key string, innerKeys []string) {
