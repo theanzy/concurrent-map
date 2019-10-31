@@ -2,7 +2,7 @@ package cmap
 
 import mapset "github.com/deckarep/golang-set"
 
-// NestedGSet CMap(<Gset>) key<set1>,key<set2>
+// NestedGSet CMap(<Gset>) ... key<set1>,key<set2>
 type NestedGSet struct {
 	_cmap ConcurrentMap
 }
@@ -49,184 +49,387 @@ func (m *NestedGSet) Pop(key string) (interface{}, bool) {
 	return m._cmap.Pop(key)
 }
 
-// SetGSetKey set inner key into inner set <key(Cmap), interkey(gset)>
+// Set New Gset in Cmap for key
+func setNewGset(shard *ConcurrentMapShared, key string, newSet *mapset.Set) {
+	shard.items[key] = newSet
+}
+
+// SetValue set value into inner set <key(Cmap), interkey(gset)>
 // lock shard for outer key
 // false if gset already has key
-func (m *NestedGSet) SetGSetKey(key string, innerKey interface{}) bool {
+// CMap<key, GSet[val1,val2]>
+func (m *NestedGSet) SetValue(key string, value interface{}) bool {
 	outerShard := m._cmap.GetShard(key) //cmap
 	outerShard.Lock()
 	defer outerShard.Unlock()
 	// whether item was added
-	isnew := false
-	innerVal, ok := outerShard.items[key] // gset
-	if ok {                               // get gset
-		// cmap already exist for <key, innerKey>
-		mySet, okSet := innerVal.(*mapset.Set)
-		if okSet {
-			isnew = (*mySet).Add(innerKey)
-			// fmt.Println("SetGSetKey", isnew, innerKey)
+	if gsetVal, exist := outerShard.items[key]; exist { // get gset
+		// cmap already exist for <key, value>
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet {
+			return (*mySet).Add(value) // add value into gset
 		}
 	} else {
-		// key or innerkey not exist
-		mySet := mapset.NewThreadUnsafeSet()
-		isnew = mySet.Add(innerKey) // create new set
-		// set new gset
-		// fmt.Println("SetGSetKey", isnew, innerKey)
-		outerShard.items[key] = &mySet
+		// key not exist
+		mySet := mapset.NewThreadUnsafeSet() // create new set
+		isnew := mySet.Add(value)            // add value into gset
+		setNewGset(outerShard, key, &mySet)  // set value to cmap
+		return isnew
 	}
-	return isnew
+	return false
 }
 
-// SetGSetMultiKeys set lists of inner keys into inner gset
+// SetValueNoLock set inner key into inner set <key(Cmap), interkey(gset)>
+// false if gset already has key
+// CMap<key, GSet[val1,val2]>
+func (m *NestedGSet) SetValueNoLock(key string, value interface{}) bool {
+	outerShard := m._cmap.GetShard(key) //cmap
+	// whether item was added
+	if gsetVal, exist := outerShard.items[key]; exist { // get gset
+		// cmap already exist for <key, innerKey>
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet {
+			return (*mySet).Add(value) // add value into gset
+		}
+	} else { // key or innerkey not exist
+		mySet := mapset.NewThreadUnsafeSet() // create new set
+		isnew := mySet.Add(value)            // add value into gset
+		setNewGset(outerShard, key, &mySet)  // set new gset to cmap
+		return isnew
+	}
+	return false
+}
+
+// SetMultiValues set list of values into inner gset
 // lock shard for outer key
-// <key, CMap[InnerKey][val]>
-func (m *NestedGSet) SetGSetMultiKeys(key string, innerKeys []interface{}) {
-	shard := m._cmap.GetShard(key)
-	shard.Lock()
-	defer shard.Unlock()
-	// get innerCmap
-	innerVal, ok := shard.items[key]
-	if ok {
-		// cmap already exist <key, innerKey>
+// CMap<key, GSet[val1,val2]>
+func (m *NestedGSet) SetMultiValues(key string, values []interface{}) {
+	outerShard := m._cmap.GetShard(key)
+	outerShard.Lock()
+	defer outerShard.Unlock()
+
+	if gsetVal, exist := outerShard.items[key]; exist { // GSet already exist in cmap for key
 		// get existing inner cmap
-		mySet, okConv := innerVal.(*mapset.Set)
-		if okConv {
-			// set inner keys into cmap
-			for _, innerKey := range innerKeys {
-				(*mySet).Add(innerKey)
+		if mySet, okConv := gsetVal.(*mapset.Set); okConv {
+			for _, innerKey := range values {
+				(*mySet).Add(innerKey) // set value into Gset
 			}
 		}
-	} else {
+	} else { // GSet dont exist for key
 		// key or innerkey not exist
 		mySet := mapset.NewThreadUnsafeSet() // create new ConcurrentMap
 		// set keys into new ConcurrentMap
-		for _, innerKey := range innerKeys {
-			mySet.Add(innerKey)
+		for _, innerKey := range values {
+			mySet.Add(innerKey) // set value into inner Gset
 		}
-		// set new inner cmap for key
-		shard.items[key] = &mySet
+		setNewGset(outerShard, key, &mySet) // set new gset for key
 	}
 }
 
-// HasGSetKey check if inner gset has inner key
-func (m *NestedGSet) HasGSetKey(key string, innerKey interface{}) bool {
-	val, ok := m._cmap.Get(key)
-	if ok {
-		shard := m._cmap.GetShard(key)
-		shard.RLock()
-		defer shard.RUnlock()
-		mySet, okSet := val.(*mapset.Set)
-		if okSet {
-			return (*mySet).Contains(innerKey)
+// SetMultiValuesNoLock set list of values into inner gset
+// lock shard for outer key
+// CMap<key, GSet[val1,val2]>
+func (m *NestedGSet) SetMultiValuesNoLock(key string, values []interface{}) {
+	outerShard := m._cmap.GetShard(key)
+	outerShard.Lock()
+	defer outerShard.Unlock()
+
+	if gsetVal, exist := outerShard.items[key]; exist { // GSet already exist in cmap for key
+		// get existing inner cmap
+		if mySet, okConv := gsetVal.(*mapset.Set); okConv {
+			for _, innerKey := range values {
+				(*mySet).Add(innerKey) // set value into Gset
+			}
+		}
+	} else { // GSet dont exist for key
+		// key or innerkey not exist
+		mySet := mapset.NewThreadUnsafeSet() // create new ConcurrentMap
+		// set keys into new ConcurrentMap
+		for _, innerKey := range values {
+			mySet.Add(innerKey) // set value into inner Gset
+		}
+		setNewGset(outerShard, key, &mySet) // set new gset for key
+	}
+}
+
+// SetMultiStrValues set list of values into inner gset
+// lock shard for outer key
+// CMap<key, GSet[val1,val2]>
+func (m *NestedGSet) SetMultiStrValues(key string, values []string) {
+	outerShard := m._cmap.GetShard(key)
+	outerShard.Lock()
+	defer outerShard.Unlock()
+
+	if gsetVal, exist := outerShard.items[key]; exist { // GSet already exist for key
+		// get existing inner cmap
+		if mySet, okConv := gsetVal.(*mapset.Set); okConv {
+			for _, value := range values {
+				(*mySet).Add(value) // set value into inner Gset
+			}
+		}
+	} else { // NestedGSet dont exist for key
+		mySet := mapset.NewThreadUnsafeSet() // create new ConcurrentMap
+		// set keys into new ConcurrentMap
+		for _, value := range values {
+			mySet.Add(value) // set value into inner Gset
+		}
+		setNewGset(outerShard, key, &mySet) // set new nested gset for key
+	}
+}
+
+// SetMultiStrValuesNoLock set list of values into inner gset
+// lock shard for outer key
+// CMap<key, GSet[val1,val2]>
+func (m *NestedGSet) SetMultiStrValuesNoLock(key string, values []string) {
+	outerShard := m._cmap.GetShard(key)
+	if gsetVal, exist := outerShard.items[key]; exist { // GSet already exist for key
+		// get existing inner cmap
+		if mySet, okConv := gsetVal.(*mapset.Set); okConv {
+			for _, value := range values {
+				(*mySet).Add(value) // set value into inner Gset
+			}
+		}
+	} else { // NestedGSet dont exist for key
+		mySet := mapset.NewThreadUnsafeSet() // create new ConcurrentMap
+		// set keys into new ConcurrentMap
+		for _, value := range values {
+			mySet.Add(value) // set value into inner Gset
+		}
+		setNewGset(outerShard, key, &mySet) // set new nested gset for key
+	}
+}
+
+// HasValue (locked) check if inner gset has value
+// CMap<key, GSet[val1,val2]>
+func (m *NestedGSet) HasValue(key string, value interface{}) bool {
+	outerShard := m._cmap.GetShard(key)
+	outerShard.RLock() // lock
+	defer outerShard.RUnlock()
+	if gsetVal, exist := outerShard.items[key]; exist { // GSet already exist in cmap for key
+		if mySet, okConv := gsetVal.(*mapset.Set); okConv {
+			return (*mySet).Contains(value) // true if set contains value
 		}
 	}
 	return false
 }
 
-// DeleteGSetKey delete one innerkey in inner CMap of outer key
-// lock shard for outer key.
-//  Clear empty cmap
-func (m *NestedGSet) DeleteGSetKey(key string, innerKey interface{}) {
+// HasValueNoLock check if inner gset has value
+// CMap<key, GSet[val1,val2]>
+func (m *NestedGSet) HasValueNoLock(key string, value interface{}) bool {
+	outerShard := m._cmap.GetShard(key)
+	if gsetVal, exist := outerShard.items[key]; exist { // GSet already exist in cmap for key
+		if mySet, okConv := gsetVal.(*mapset.Set); okConv {
+			return (*mySet).Contains(value) // true if set contains value
+		}
+	}
+	return false
+}
 
-	if val, ok := m._cmap.Get(key); ok {
-		shard := m._cmap.GetShard(key)
-		shard.Lock()
-		defer shard.Unlock()
-		mySet, okSet := val.(*mapset.Set)
-		if okSet {
-			(*mySet).Remove(innerKey)
+// DeleteValue (locked) delete one value in inner gset for key
+// Clear empty cmap
+// CMap<key, GSet[val1,val2]>
+func (m *NestedGSet) DeleteValue(key string, value interface{}) {
 
+	outerShard := m._cmap.GetShard(key)
+	outerShard.Lock() // lock
+	defer outerShard.Unlock()
+	if gsetVal, exist := outerShard.items[key]; exist { // check if gset exist in cmap for key
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet {
+			(*mySet).Remove(value) // remove value from gset for key
 			if (*mySet).Cardinality() == 0 {
-				delete(shard.items, key)
+				delete(outerShard.items, key) // Clear empty set
 			}
 		}
 	}
 }
 
-// DeleteGSetMultiKeys delete list of innerkeys in inner Gset of given outer key
+// DeleteValueNoLock delete one value in inner GSet of outer key
+//  Clear empty gset
+// CMap<key, GSet[val1,val2]>
+func (m *NestedGSet) DeleteValueNoLock(key string, value interface{}) {
+
+	outerShard := m._cmap.GetShard(key)
+	if gsetVal, okVal := outerShard.items[key]; okVal {
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet {
+			(*mySet).Remove(value) // remove value from gset for key
+			if (*mySet).Cardinality() == 0 {
+				delete(outerShard.items, key) // Clear empty set
+			}
+		}
+	}
+}
+
+// DeleteMultipleValues (outer shard lock) delete list of values in inner Gset for key in cmap
 // lock shard for outer key
-func (m *NestedGSet) DeleteGSetMultiKeys(key string, innerKeys []interface{}) {
+func (m *NestedGSet) DeleteMultipleValues(key string, values []interface{}) {
 
-	if val, ok := m._cmap.Get(key); ok { // cmap exist for key
-		shard := m._cmap.GetShard(key)
-		shard.Lock()
-		defer shard.Unlock()
-		mySet, okSet := val.(*mapset.Set)
-		if okSet {
-			for _, innerKey := range innerKeys {
-				(*mySet).Remove(innerKey)
+	outerShard := m._cmap.GetShard(key)
+	outerShard.Lock() // lock
+	defer outerShard.Unlock()
+	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exist in cmap for key
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet { // convert ok
+			for _, value := range values {
+				(*mySet).Remove(value) // remove value in inner GSet
 			}
 			if (*mySet).Cardinality() == 0 {
-				delete(shard.items, key)
+				delete(outerShard.items, key) // remove empty inner GSet
 			}
 		}
 	}
 }
 
-// GetGSet returns inner gset for key
-func (m *NestedGSet) GetGSet(key string) (*mapset.Set, bool) {
-	// read lock
-	// Get shard
-	shard := m._cmap.GetShard(key)
-	shard.RLock()
-	defer shard.RUnlock()
-	// Get item from shard for given key.
-	val, exist := shard.items[key]
-	if !exist { // outer key does not exists
-		return nil, false
-	}
-	mySet, okSet := val.(*mapset.Set)
+// DeleteMultipleStrValues (outer shard lock) delete list of values in inner Gset for key in cmap
+// lock shard for outer key
+func (m *NestedGSet) DeleteMultipleStrValues(key string, values []string) {
 
-	return mySet, okSet
-}
-
-// GetGSetNoLock returns inner gset for key
-func (m *NestedGSet) GetGSetNoLock(key string) (*mapset.Set, bool) {
-	// read lock
-	// Get shard
-	shard := m._cmap.GetShard(key)
-	// Get item from shard for given key.
-	val, exist := shard.items[key]
-	if !exist { // outer key does not exists
-		return nil, false
-	}
-	mySet, okSet := val.(*mapset.Set)
-
-	return mySet, okSet
-}
-
-// GetGSetKeys Get list of inner keys in inner gset
-// <Keys, <[k1]val1, [k2]val2>> get k1,k2, ...
-func (m *NestedGSet) GetGSetKeys(key string) ([]interface{}, bool) {
-	shard := m._cmap.GetShard(key)
-	shard.RLock()
-	defer shard.RUnlock()
-	if mySet, exist := m.GetGSet(key); exist {
-		results := make([]interface{}, 0, (*mySet).Cardinality())
-		for iter := range (*mySet).Iter() {
-			k := iter
-			results = append(results, k)
+	outerShard := m._cmap.GetShard(key)
+	outerShard.Lock() // lock
+	defer outerShard.Unlock()
+	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exist in cmap for key
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet { // convert ok
+			for _, value := range values {
+				(*mySet).Remove(value) // remove value in inner GSet
+			}
+			if (*mySet).Cardinality() == 0 {
+				delete(outerShard.items, key) // remove empty inner GSet
+			}
 		}
-		return results, exist
+	}
+}
+
+// DeleteMultipleValuesNoLock delete list of values in inner Gset for key in cmap
+// lock shard for outer key
+func (m *NestedGSet) DeleteMultipleValuesNoLock(key string, values []interface{}) {
+	outerShard := m._cmap.GetShard(key)
+	outerShard.Lock() // lock
+	defer outerShard.Unlock()
+	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exist in cmap for key
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet { // convert ok
+			for _, value := range values {
+				(*mySet).Remove(value) // remove value in inner GSet
+			}
+			if (*mySet).Cardinality() == 0 {
+				delete(outerShard.items, key) // remove empty inner GSet
+			}
+		}
+	}
+}
+
+// GetGSet returns inner gset in cmap for key
+func (m *NestedGSet) GetGSet(key string) (*mapset.Set, bool) {
+	outerShard := m._cmap.GetShard(key)
+	outerShard.RLock()
+	defer outerShard.RUnlock()
+	// Get item from shard for given key.
+	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exists in cmap for key
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet { // convert
+			return mySet, true
+		}
 	}
 	return nil, false
 }
 
-// GetGSetStrKeys Get list of inner keys in inner gset
-// <Keys, <[k1]val1, [k2]val2>> get k1,k2, ...
-func (m *NestedGSet) GetGSetStrKeys(key string) ([]string, bool) {
-
-	if mySet, exist := m.GetGSet(key); exist {
-		shard := m._cmap.GetShard(key)
-		shard.RLock()
-		defer shard.RUnlock()
-		results := make([]string, 0, (*mySet).Cardinality())
-		for iter := range (*mySet).Iter() {
-			if str, ok := iter.(string); ok {
-				results = append(results, str)
-			}
+// GetGSetNoLock returns inner gset in cmap for key
+func (m *NestedGSet) GetGSetNoLock(key string) (*mapset.Set, bool) {
+	outerShard := m._cmap.GetShard(key)
+	// Get item from shard for given key.
+	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exists in cmap for key
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet { // convert
+			return mySet, true
 		}
-		return results, exist
+	}
+	return nil, false
+}
+
+// PopGSet deleters key and returns inner gset in cmap for key
+func (m *NestedGSet) PopGSet(key string) (*mapset.Set, bool) {
+	outerShard := m._cmap.GetShard(key)
+	// Get item from shard for given key.
+	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exists in cmap for key
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet { // convert
+			delete(outerShard.items, key)
+			return mySet, true
+		}
+	}
+	return nil, false
+}
+
+// PopGSetNoLock deleters key and returns inner gset in cmap for key
+func (m *NestedGSet) PopGSetNoLock(key string) (*mapset.Set, bool) {
+	outerShard := m._cmap.GetShard(key)
+	// Get item from shard for given key.
+	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exists in cmap for key
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet { // convert
+			delete(outerShard.items, key)
+			return mySet, true
+		}
+	}
+	return nil, false
+}
+
+// GetValues Get list of values in inner gset for key
+// CMap<[<key, GSet1[val1,val2]>, <key2, GSet2[val1,val2]>,... ] > , get val1, val2 for key
+func (m *NestedGSet) GetValues(key string) ([]interface{}, bool) {
+	outerShard := m._cmap.GetShard(key)
+	outerShard.RLock()
+	defer outerShard.RUnlock()
+	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exists in cmap for key
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet {
+			return (*mySet).ToSlice(), true // return slice of values in gset for key
+		}
+	}
+	return nil, false
+}
+
+// GetValuesNoLock Get list of values in inner gset for key
+// CMap<[<key, GSet1[val1,val2]>, <key2, GSet2[val1,val2]>,... ] > , get val1, val2 for key
+func (m *NestedGSet) GetValuesNoLock(key string) ([]interface{}, bool) {
+	outerShard := m._cmap.GetShard(key)
+	outerShard.RLock()
+	defer outerShard.RUnlock()
+	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exists in cmap for key
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet {
+			return (*mySet).ToSlice(), true // return slice of values in gset for key
+		}
+	}
+	return nil, false
+}
+
+// GetStrValues Get list of values in inner gset for key
+// CMap<[<key, GSet1[val1,val2]>, <key2, GSet2[val1,val2]>,... ] > , get val1, val2 for key
+func (m *NestedGSet) GetStrValues(key string) ([]string, bool) {
+	outerShard := m._cmap.GetShard(key)
+	outerShard.RLock()
+	defer outerShard.RUnlock()
+	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exists in cmap for key
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet { // convert
+			result := make([]string, (*mySet).Cardinality())
+			for val := range (*mySet).Iter() {
+				if strVal, strOK := val.(string); strOK {
+					result = append(result, strVal)
+				}
+			}
+			return result, true // return slice of values in gset for key
+		} // for
+	}
+	return nil, false
+}
+
+// GetStrValuesNoLock Get list of values in inner gset for key
+// CMap<[<key, GSet1[val1,val2]>, <key2, GSet2[val1,val2]>,... ] > , get val1, val2 for key
+func (m *NestedGSet) GetStrValuesNoLock(key string) ([]string, bool) {
+	outerShard := m._cmap.GetShard(key)
+	// Get item from shard for given key.
+	outerShard.RLock()
+	defer outerShard.RUnlock()
+	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exists in cmap for key
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet { // convert
+			result := make([]string, (*mySet).Cardinality())
+			for val := range (*mySet).Iter() {
+				if strVal, strOK := val.(string); strOK {
+					result = append(result, strVal)
+				}
+			} // for
+			return result, true // return slice of values in gset for key
+		}
 	}
 	return nil, false
 }
