@@ -44,6 +44,11 @@ func (m *NestedGSet) Set(key string, value interface{}) {
 	m._cmap.Set(key, value)
 }
 
+// SetGSet key in cmap
+func (m *NestedGSet) SetGSet(key string, value *mapset.Set) {
+	m._cmap.Set(key, value)
+}
+
 // Pop key in cmap and return (value, isexist bool)
 func (m *NestedGSet) Pop(key string) (interface{}, bool) {
 	return m._cmap.Pop(key)
@@ -339,9 +344,11 @@ func (m *NestedGSet) GetGSetNoLock(key string) (*mapset.Set, bool) {
 	return nil, false
 }
 
-// PopGSet deleters key and returns inner gset in cmap for key
+// PopGSet deletes key and returns inner gset in cmap for key
 func (m *NestedGSet) PopGSet(key string) (*mapset.Set, bool) {
 	outerShard := m._cmap.GetShard(key)
+	outerShard.Lock()
+	outerShard.Unlock()
 	// Get item from shard for given key.
 	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exists in cmap for key
 		if mySet, okSet := gsetVal.(*mapset.Set); okSet { // convert
@@ -352,14 +359,55 @@ func (m *NestedGSet) PopGSet(key string) (*mapset.Set, bool) {
 	return nil, false
 }
 
-// PopGSetNoLock deleters key and returns inner gset in cmap for key
+// PopGSetNoLock deletes key and returns inner gset in cmap for key
 func (m *NestedGSet) PopGSetNoLock(key string) (*mapset.Set, bool) {
 	outerShard := m._cmap.GetShard(key)
+
 	// Get item from shard for given key.
 	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exists in cmap for key
 		if mySet, okSet := gsetVal.(*mapset.Set); okSet { // convert
 			delete(outerShard.items, key)
 			return mySet, true
+		}
+	}
+	return nil, false
+}
+
+// PopStrValues deletes key and returns []string values of inner gset in cmap for key
+func (m *NestedGSet) PopStrValues(key string) ([]string, bool) {
+	outerShard := m._cmap.GetShard(key)
+	outerShard.Lock()
+	outerShard.Unlock()
+	// Get item from shard for given key.
+	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exists in cmap for key
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet { // convert
+			results := make([]string, 0, (*mySet).Cardinality())
+			for iter := range (*mySet).Iter() {
+				if strResult, okStr := iter.(string); okStr {
+					results = append(results, strResult)
+				}
+			}
+			delete(outerShard.items, key)
+			return results, true
+		}
+	}
+	return nil, false
+}
+
+// PopStrValuesNoLock deletes key and returns []string values of inner gset in cmap for key
+func (m *NestedGSet) PopStrValuesNoLock(key string) ([]string, bool) {
+	outerShard := m._cmap.GetShard(key)
+	// Get item from shard for given key.
+	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exists in cmap for key
+		if mySet, okSet := gsetVal.(*mapset.Set); okSet { // convert
+			results := make([]string, 0, (*mySet).Cardinality())
+			for iter := range (*mySet).Iter() {
+				if strResult, okStr := iter.(string); okStr {
+					results = append(results, strResult)
+				}
+			}
+			delete(outerShard.items, key)
+			return results, true
 		}
 	}
 	return nil, false
@@ -401,7 +449,7 @@ func (m *NestedGSet) GetStrValues(key string) ([]string, bool) {
 	defer outerShard.RUnlock()
 	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exists in cmap for key
 		if mySet, okSet := gsetVal.(*mapset.Set); okSet { // convert
-			result := make([]string, (*mySet).Cardinality())
+			result := make([]string, 0, (*mySet).Cardinality())
 			for val := range (*mySet).Iter() {
 				if strVal, strOK := val.(string); strOK {
 					result = append(result, strVal)
@@ -422,7 +470,7 @@ func (m *NestedGSet) GetStrValuesNoLock(key string) ([]string, bool) {
 	defer outerShard.RUnlock()
 	if gsetVal, exist := outerShard.items[key]; exist { // inner gset exists in cmap for key
 		if mySet, okSet := gsetVal.(*mapset.Set); okSet { // convert
-			result := make([]string, (*mySet).Cardinality())
+			result := make([]string, 0, (*mySet).Cardinality())
 			for val := range (*mySet).Iter() {
 				if strVal, strOK := val.(string); strOK {
 					result = append(result, strVal)

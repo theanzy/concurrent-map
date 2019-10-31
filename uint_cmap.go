@@ -12,6 +12,41 @@ type Uint64Map struct {
 	mtx   *sync.RWMutex
 }
 
+// IsEmpty return true if cmap empty
+func (m *Uint64Map) IsEmpty() bool {
+	return m._cmap.IsEmpty()
+}
+
+// Has return true if cmap has key
+func (m *Uint64Map) Has(key string) bool {
+	return m._cmap.Has(key)
+}
+
+// Keys returns all keys in cmap
+func (m *Uint64Map) Keys() []string {
+	return m._cmap.Keys()
+}
+
+// Count returns number of elements
+func (m *Uint64Map) Count() int {
+	return m._cmap.Count()
+}
+
+// Remove key in cmap
+func (m *Uint64Map) Remove(key string) {
+	m._cmap.Remove(key)
+}
+
+// Set key in cmap
+func (m *Uint64Map) Set(key string, value interface{}) {
+	m._cmap.Set(key, value)
+}
+
+// Pop key in cmap and return (value, isexist bool)
+func (m *Uint64Map) Pop(key string) (interface{}, bool) {
+	return m._cmap.Pop(key)
+}
+
 // NewUint64Map CMap(key string, value uint64)
 func NewUint64Map() *Uint64Map {
 	m := new(Uint64Map)
